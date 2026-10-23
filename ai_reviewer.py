@@ -42,51 +42,59 @@ def tao_nhan_xet_va_xep_diem(ten_hs, chuoi_diem_tho, tong_quan_lop=""):
         (Lời nhắn ân cần, lịch sự của GVCN gửi phụ huynh)
         """
 
-        # BƯỚC ĐỘT PHÁ: Tự động truy vấn danh sách các mô hình mà API Key của thầy được phép dùng
         list_url = "https://generativelanguage.googleapis.com/v1beta/models"
         
-        # Xác định phương thức xác thực chuẩn
         headers_key = {"Content-Type": "application/json", "x-goog-api-key": api_key}
-        res_models = requests.get(list_url, headers=headers_key, timeout=10)
+        try:
+            # Tăng thời gian chờ quét mô hình lên 30 giây
+            res_models = requests.get(list_url, headers=headers_key, timeout=30)
+        except Exception:
+            res_models = None
         
-        if res_models.status_code in [401, 403]:
+        if res_models and res_models.status_code in [401, 403]:
             headers_bearer = {"Content-Type": "application/json", "Authorization": f"Bearer {api_key}"}
-            res_models = requests.get(list_url, headers=headers_bearer, timeout=10)
-            active_headers = headers_bearer
+            try:
+                res_models = requests.get(list_url, headers=headers_bearer, timeout=30)
+                active_headers = headers_bearer
+            except Exception:
+                active_headers = headers_bearer
         else:
             active_headers = headers_key
 
         danh_sach_models = []
-        if res_models.status_code == 200:
+        if res_models and res_models.status_code == 200:
             models_data = res_models.json().get("models", [])
             for m in models_data:
-                # Chỉ lọc lấy các mô hình Gemini hỗ trợ tạo văn bản
                 if "generateContent" in m.get("supportedGenerationMethods", []) and "gemini" in m.get("name", "").lower():
                     danh_sach_models.append(m["name"].replace("models/", ""))
         
-        # Sắp xếp ưu tiên các mô hình 'flash' (nhanh nhất) lên đầu danh sách chạy
         if danh_sach_models:
             flash_models = [m for m in danh_sach_models if "flash" in m.lower()]
             danh_sach_models = flash_models + [m for m in danh_sach_models if m not in flash_models]
         else:
-            # Danh sách dự phòng an toàn cuối cùng
-            danh_sach_models = ["gemini-3.8-flash", "gemini-3.1-pro-preview", "gemini-2.5-flash", "gemini-1.5-flash"]
+            danh_sach_models = ["gemini-1.5-flash", "gemini-2.5-flash"]
 
         payload = {"contents": [{"parts": [{"text": prompt}]}]}
         nhat_ky_loi = []
 
-        # Tự động rà quét và chạy mô hình phù hợp nhất
         for m_name in danh_sach_models:
             url = f"https://generativelanguage.googleapis.com/v1beta/models/{m_name}:generateContent"
-            res = requests.post(url, headers=active_headers, data=json.dumps(payload), timeout=20)
-            
-            if res.status_code == 200:
-                return res.json()["candidates"][0]["content"]["parts"][0]["text"]
-            
-            nhat_ky_loi.append(f"[{m_name}]: Mã {res.status_code}")
+            try:
+                # BƯỚC QUAN TRỌNG: Tăng thời gian chờ AI suy nghĩ lên 60 giây
+                res = requests.post(url, headers=active_headers, data=json.dumps(payload), timeout=60)
+                
+                if res.status_code == 200:
+                    return res.json()["candidates"][0]["content"]["parts"][0]["text"]
+                
+                nhat_ky_loi.append(f"[{m_name}]: Mã {res.status_code}")
+            except requests.exceptions.Timeout:
+                nhat_ky_loi.append(f"[{m_name}]: Quá 60 giây không phản hồi")
+            except Exception as err:
+                nhat_ky_loi.append(f"[{m_name}]: Lỗi mạng")
+                
             time.sleep(0.5)
 
-        return f"⚠️ Tài khoản Google của thầy hiện không cấp quyền truy cập vào bất kỳ mô hình nào, hoặc đã hết hạn mức. Chi tiết các thử nghiệm: {', '.join(nhat_ky_loi)}"
+        return f"⚠️ Hệ thống đang phản hồi chậm hoặc có lỗi. Chi tiết: {', '.join(nhat_ky_loi)}"
 
     except Exception as e:
         return f"❌ Lỗi hệ thống: {str(e)}"
