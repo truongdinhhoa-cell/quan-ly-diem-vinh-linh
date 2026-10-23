@@ -5,7 +5,6 @@ import time
 
 def tao_nhan_xet_va_xep_diem(ten_hs, chuoi_diem_tho, tong_quan_lop=""):
     try:
-        # 1. Lấy khóa từ mục Secrets trên Streamlit Cloud
         api_key = ""
         if "GEMINI_API_KEY" in st.secrets:
             api_key = str(st.secrets["GEMINI_API_KEY"]).strip()
@@ -27,7 +26,7 @@ def tao_nhan_xet_va_xep_diem(ten_hs, chuoi_diem_tho, tong_quan_lop=""):
            • Ngữ văn: TX1: 6,0
            • Giáo dục thể chất: Đạt (Đ)
         3. Chỉ hiển thị đúng các cột điểm thực tế đang có (TX1, TX2...). Nếu dữ liệu chưa có chữ "GK:" hay "CK:" thì tuyệt đối không tự thêm vào.
-        4. Không dùng các ký tự đánh dấu Markdown như dấu sao (**), dấu thăng (#) để tránh bị lộ ký tự rác khi dán vào Zalo. Hãy dùng chữ IN HOA kết hợp biểu tượng (📌, 📊, 💡, 🤝) cho các mục lớn.
+        4. Không dùng các ký tự đánh dấu Markdown như dấu sao (**), dấu thăng (#). Hãy dùng chữ IN HOA kết hợp biểu tượng (📌, 📊, 💡, 🤝) cho các mục lớn.
         
         Nội dung báo cáo gồm 4 phần:
         📌 1. KẾT QUẢ HỌC TẬP CÁC MÔN CỦA EM {ten_hs.upper()}:
@@ -43,14 +42,12 @@ def tao_nhan_xet_va_xep_diem(ten_hs, chuoi_diem_tho, tong_quan_lop=""):
         (Lời nhắn ân cần, lịch sự của GVCN gửi phụ huynh)
         """
 
-      # CẬP NHẬT: Ưu tiên gemini-1.5-flash lên đầu để tận dụng 1500 lượt miễn phí/ngày
+        # CẬP NHẬT: Thay đổi sang mô hình mới nhất gemini-3.8-flash theo đúng yêu cầu của Google
         danh_sach_models = [
-            "gemini-1.5-flash",
-            "gemini-3.1-flash",
-            "gemini-2.5-flash"
+            "gemini-3.8-flash",
+            "gemini-1.5-flash"
         ]
 
-        # Ưu tiên 1: Thử qua SDK google-genai
         try:
             from google import genai
             client = genai.Client(api_key=api_key)
@@ -67,7 +64,6 @@ def tao_nhan_xet_va_xep_diem(ten_hs, chuoi_diem_tho, tong_quan_lop=""):
         except Exception:
             pass
 
-        # Ưu tiên 2: Gọi trực tiếp REST API xoay vòng qua các mô hình
         payload = {"contents": [{"parts": [{"text": prompt}]}]}
         loi_cuoi = ""
 
@@ -92,7 +88,7 @@ def tao_nhan_xet_va_xep_diem(ten_hs, chuoi_diem_tho, tong_quan_lop=""):
             time.sleep(0.5)
             continue
 
-        return f"⚠️ Hệ thống AI của Google hiện đang quá tải tạm thời, thầy/cô vui lòng chọn lại sau vài giây. ({loi_cuoi})"
+        return f"⚠️ Hệ thống AI của Google hiện đang báo lỗi: ({loi_cuoi})"
 
     except Exception as e:
         return f"❌ Lỗi chi tiết: {str(e)}"
