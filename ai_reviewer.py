@@ -42,53 +42,51 @@ def tao_nhan_xet_va_xep_diem(ten_hs, chuoi_diem_tho, tong_quan_lop=""):
         (Lời nhắn ân cần, lịch sự của GVCN gửi phụ huynh)
         """
 
-        # CẬP NHẬT: Thay đổi sang mô hình mới nhất gemini-3.8-flash theo đúng yêu cầu của Google
-        danh_sach_models = [
-            "gemini-3.8-flash",
-            "gemini-1.5-flash"
-        ]
+        # BƯỚC ĐỘT PHÁ: Tự động truy vấn danh sách các mô hình mà API Key của thầy được phép dùng
+        list_url = "https://generativelanguage.googleapis.com/v1beta/models"
+        
+        # Xác định phương thức xác thực chuẩn
+        headers_key = {"Content-Type": "application/json", "x-goog-api-key": api_key}
+        res_models = requests.get(list_url, headers=headers_key, timeout=10)
+        
+        if res_models.status_code in [401, 403]:
+            headers_bearer = {"Content-Type": "application/json", "Authorization": f"Bearer {api_key}"}
+            res_models = requests.get(list_url, headers=headers_bearer, timeout=10)
+            active_headers = headers_bearer
+        else:
+            active_headers = headers_key
 
-        try:
-            from google import genai
-            client = genai.Client(api_key=api_key)
-            for m_name in danh_sach_models:
-                try:
-                    response = client.models.generate_content(
-                        model=m_name,
-                        contents=prompt,
-                    )
-                    if response and response.text:
-                        return response.text
-                except Exception:
-                    continue
-        except Exception:
-            pass
+        danh_sach_models = []
+        if res_models.status_code == 200:
+            models_data = res_models.json().get("models", [])
+            for m in models_data:
+                # Chỉ lọc lấy các mô hình Gemini hỗ trợ tạo văn bản
+                if "generateContent" in m.get("supportedGenerationMethods", []) and "gemini" in m.get("name", "").lower():
+                    danh_sach_models.append(m["name"].replace("models/", ""))
+        
+        # Sắp xếp ưu tiên các mô hình 'flash' (nhanh nhất) lên đầu danh sách chạy
+        if danh_sach_models:
+            flash_models = [m for m in danh_sach_models if "flash" in m.lower()]
+            danh_sach_models = flash_models + [m for m in danh_sach_models if m not in flash_models]
+        else:
+            # Danh sách dự phòng an toàn cuối cùng
+            danh_sach_models = ["gemini-3.8-flash", "gemini-3.1-pro-preview", "gemini-2.5-flash", "gemini-1.5-flash"]
 
         payload = {"contents": [{"parts": [{"text": prompt}]}]}
-        loi_cuoi = ""
+        nhat_ky_loi = []
 
+        # Tự động rà quét và chạy mô hình phù hợp nhất
         for m_name in danh_sach_models:
             url = f"https://generativelanguage.googleapis.com/v1beta/models/{m_name}:generateContent"
-            
-            headers_key = {"Content-Type": "application/json", "x-goog-api-key": api_key}
-            res = requests.post(url, headers=headers_key, data=json.dumps(payload), timeout=20)
+            res = requests.post(url, headers=active_headers, data=json.dumps(payload), timeout=20)
             
             if res.status_code == 200:
                 return res.json()["candidates"][0]["content"]["parts"][0]["text"]
             
-            if res.status_code in [401, 403]:
-                headers_bearer = {"Content-Type": "application/json", "Authorization": f"Bearer {api_key}"}
-                res2 = requests.post(url, headers=headers_bearer, data=json.dumps(payload), timeout=20)
-                if res2.status_code == 200:
-                    return res2.json()["candidates"][0]["content"]["parts"][0]["text"]
-                loi_cuoi = f"Mã {res2.status_code}: {res2.text}"
-            else:
-                loi_cuoi = f"Mã {res.status_code}: {res.text}"
-            
+            nhat_ky_loi.append(f"[{m_name}]: Mã {res.status_code}")
             time.sleep(0.5)
-            continue
 
-        return f"⚠️ Hệ thống AI của Google hiện đang báo lỗi: ({loi_cuoi})"
+        return f"⚠️ Tài khoản Google của thầy hiện không cấp quyền truy cập vào bất kỳ mô hình nào, hoặc đã hết hạn mức. Chi tiết các thử nghiệm: {', '.join(nhat_ky_loi)}"
 
     except Exception as e:
-        return f"❌ Lỗi chi tiết: {str(e)}"
+        return f"❌ Lỗi hệ thống: {str(e)}"
