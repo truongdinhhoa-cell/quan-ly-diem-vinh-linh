@@ -49,7 +49,6 @@ def tao_nhan_xet_va_xep_diem(ten_hs, chuoi_diem_tho, tong_quan_lop=""):
             "gemini-3.1-flash",
             "gemini-2.5-flash"
         ]
-        ]
 
         # Ưu tiên 1: Thử qua SDK google-genai
         try:
