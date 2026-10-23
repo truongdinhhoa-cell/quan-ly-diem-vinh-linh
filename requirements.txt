@@ -1,6 +1,7 @@
 streamlit
 pandas
 pdfplumber
-google-generativeai
 openpyxl
 requests
+google-genai
+google-generativeai
