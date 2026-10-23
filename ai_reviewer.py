@@ -1,6 +1,7 @@
 import streamlit as st
 import requests
 import json
+import time
 
 def tao_nhan_xet_va_xep_diem(ten_hs, chuoi_diem_tho, tong_quan_lop=""):
     try:
@@ -42,38 +43,62 @@ def tao_nhan_xet_va_xep_diem(ten_hs, chuoi_diem_tho, tong_quan_lop=""):
         (Lời nhắn ân cần, lịch sự của GVCN gửi phụ huynh)
         """
 
-        # Ưu tiên 1: Dùng SDK mới nhất google-genai (hỗ trợ trực tiếp khóa AQ...)
+        # Danh sách các mô hình dự phòng (Nếu mô hình đầu bị quá tải 503 sẽ tự động nhảy sang mô hình kế tiếp)
+        danh_sach_models = [
+            "gemini-2.5-flash",
+            "gemini-2.0-flash",
+            "gemini-2.5-flash-lite-preview-06-17",
+            "gemini-1.5-flash",
+            "gemini-2.5-pro"
+        ]
+
+        # Ưu tiên 1: Thử qua SDK google-genai với danh sách mô hình dự phòng
         try:
             from google import genai
             client = genai.Client(api_key=api_key)
-            response = client.models.generate_content(
-                model="gemini-2.5-flash",
-                contents=prompt,
-            )
-            if response and response.text:
-                return response.text
+            for m_name in danh_sach_models:
+                try:
+                    response = client.models.generate_content(
+                        model=m_name,
+                        contents=prompt,
+                    )
+                    if response and response.text:
+                        return response.text
+                except Exception as ex_sdk:
+                    # Nếu lỗi quá tải 503 hoặc 429 thì chuyển ngay sang model tiếp theo
+                    continue
         except Exception:
             pass
 
-        # Ưu tiên 2: Gọi trực tiếp REST API với thời gian chờ ngắn (15 giây) để không bị treo
+        # Ưu tiên 2: Gọi trực tiếp REST API xoay vòng qua các mô hình nếu máy chủ bận (503)
         payload = {"contents": [{"parts": [{"text": prompt}]}]}
-        url = "https://generativelanguage.googleapis.com/v1beta/models/gemini-2.5-flash:generateContent"
-        
-        # Thử phương thức 1: Header x-goog-api-key
-        headers_key = {"Content-Type": "application/json", "x-goog-api-key": api_key}
-        res = requests.post(url, headers=headers_key, data=json.dumps(payload), timeout=15)
-        
-        if res.status_code == 200:
-            return res.json()["candidates"][0]["content"]["parts"][0]["text"]
-            
-        # Thử phương thức 2: Header Authorization Bearer cho Auth Key AQ...
-        headers_bearer = {"Content-Type": "application/json", "Authorization": f"Bearer {api_key}"}
-        res2 = requests.post(url, headers=headers_bearer, data=json.dumps(payload), timeout=15)
-        
-        if res2.status_code == 200:
-            return res2.json()["candidates"][0]["content"]["parts"][0]["text"]
+        loi_cuoi = ""
 
-        return f"❌ Lỗi xác thực từ Google (Mã {res.status_code}): {res.text}"
+        for m_name in danh_sach_models:
+            url = f"https://generativelanguage.googleapis.com/v1beta/models/{m_name}:generateContent"
+            
+            # Cách A: Header x-goog-api-key
+            headers_key = {"Content-Type": "application/json", "x-goog-api-key": api_key}
+            res = requests.post(url, headers=headers_key, data=json.dumps(payload), timeout=20)
+            
+            if res.status_code == 200:
+                return res.json()["candidates"][0]["content"]["parts"][0]["text"]
+            
+            # Nếu gặp lỗi xác thực 401/403 thì thử sang Bearer Token
+            if res.status_code in [401, 403]:
+                headers_bearer = {"Content-Type": "application/json", "Authorization": f"Bearer {api_key}"}
+                res2 = requests.post(url, headers=headers_bearer, data=json.dumps(payload), timeout=20)
+                if res2.status_code == 200:
+                    return res2.json()["candidates"][0]["content"]["parts"][0]["text"]
+                loi_cuoi = f"Mã {res2.status_code}: {res2.text}"
+            else:
+                loi_cuoi = f"Mã {res.status_code}: {res.text}"
+            
+            # Nếu lỗi 503 (quá tải) hoặc 429,404 thì tự động thử ngay model tiếp theo trong danh sách
+            time.sleep(0.5)
+            continue
+
+        return f"⚠️ Hệ thống AI của Google hiện đang quá tải tạm thời, thầy/cô vui lòng chọn lại sau vài giây. ({loi_cuoi})"
 
     except Exception as e:
         return f"❌ Lỗi chi tiết: {str(e)}"
