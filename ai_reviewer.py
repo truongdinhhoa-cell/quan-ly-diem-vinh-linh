@@ -7,7 +7,7 @@ def tao_nhan_xet_va_xep_diem(ten_hs, chuoi_diem_tho, tong_quan_lop=""):
         # 1. Lấy khóa từ mục Secrets trên Streamlit Cloud
         api_key = ""
         if "GEMINI_API_KEY" in st.secrets:
-            api_key = st.secrets["GEMINI_API_KEY"].strip()
+            api_key = str(st.secrets["GEMINI_API_KEY"]).strip()
         
         if not api_key:
             return "❌ Lỗi: Chưa tìm thấy GEMINI_API_KEY trong mục Secrets của Streamlit Cloud."
@@ -42,39 +42,38 @@ def tao_nhan_xet_va_xep_diem(ten_hs, chuoi_diem_tho, tong_quan_lop=""):
         (Lời nhắn ân cần, lịch sự của GVCN gửi phụ huynh)
         """
 
-        # 2. Hỗ trợ tự động cả Auth Key đời mới (AQ...) lẫn API Key thông thường
-        # Thử dùng SDK google-genai hoặc gọi trực tiếp chuẩn xác thực Bearer / x-goog-api-key
-        payload = {
-            "contents": [{"parts": [{"text": prompt}]}]
-        }
+        # Ưu tiên 1: Dùng SDK mới nhất google-genai (hỗ trợ trực tiếp khóa AQ...)
+        try:
+            from google import genai
+            client = genai.Client(api_key=api_key)
+            response = client.models.generate_content(
+                model="gemini-2.5-flash",
+                contents=prompt,
+            )
+            if response and response.text:
+                return response.text
+        except Exception:
+            pass
+
+        # Ưu tiên 2: Gọi trực tiếp REST API với thời gian chờ ngắn (15 giây) để không bị treo
+        payload = {"contents": [{"parts": [{"text": prompt}]}]}
+        url = "https://generativelanguage.googleapis.com/v1beta/models/gemini-2.5-flash:generateContent"
         
-        danh_sach_models = ["gemini-2.5-flash", "gemini-2.0-flash", "gemini-1.5-flash"]
-        loi_cuoi = ""
-
-        for model_name in danh_sach_models:
-            # Cách A: Truyền qua Header x-goog-api-key (Chuẩn mới cho cả AQ... và AIza...)
-            url = f"https://generativelanguage.googleapis.com/v1beta/models/{model_name}:generateContent"
-            headers_key = {
-                "Content-Type": "application/json",
-                "x-goog-api-key": api_key
-            }
-            res = requests.post(url, headers=headers_key, data=json.dumps(payload), timeout=60)
+        # Thử phương thức 1: Header x-goog-api-key
+        headers_key = {"Content-Type": "application/json", "x-goog-api-key": api_key}
+        res = requests.post(url, headers=headers_key, data=json.dumps(payload), timeout=15)
+        
+        if res.status_code == 200:
+            return res.json()["candidates"][0]["content"]["parts"][0]["text"]
             
-            # Cách B: Nếu khóa AQ... yêu cầu chuẩn Bearer Token (OAuth Auth Key)
-            if res.status_code == 401 or res.status_code == 403:
-                headers_bearer = {
-                    "Content-Type": "application/json",
-                    "Authorization": f"Bearer {api_key}"
-                }
-                res = requests.post(url, headers=headers_bearer, data=json.dumps(payload), timeout=60)
+        # Thử phương thức 2: Header Authorization Bearer cho Auth Key AQ...
+        headers_bearer = {"Content-Type": "application/json", "Authorization": f"Bearer {api_key}"}
+        res2 = requests.post(url, headers=headers_bearer, data=json.dumps(payload), timeout=15)
+        
+        if res2.status_code == 200:
+            return res2.json()["candidates"][0]["content"]["parts"][0]["text"]
 
-            if res.status_code == 200:
-                data = res.json()
-                return data["candidates"][0]["content"]["parts"][0]["text"]
-            else:
-                loi_cuoi = f"HTTP {res.status_code}: {res.text}"
-
-        return f"❌ Lỗi từ máy chủ Google: {loi_cuoi}"
+        return f"❌ Lỗi xác thực từ Google (Mã {res.status_code}): {res.text}"
 
     except Exception as e:
         return f"❌ Lỗi chi tiết: {str(e)}"
