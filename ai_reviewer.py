@@ -43,11 +43,12 @@ def tao_nhan_xet_va_xep_diem(ten_hs, chuoi_diem_tho, tong_quan_lop=""):
         (Lời nhắn ân cần, lịch sự của GVCN gửi phụ huynh)
         """
 
-        # CẬP NHẬT: Danh sách các mô hình thế hệ mới nhất theo yêu cầu của Google
+      # CẬP NHẬT: Ưu tiên gemini-1.5-flash lên đầu để tận dụng 1500 lượt miễn phí/ngày
         danh_sach_models = [
-            "gemini-3.1-pro-preview",
+            "gemini-1.5-flash",
             "gemini-3.1-flash",
             "gemini-2.5-flash"
+        ]
         ]
 
         # Ưu tiên 1: Thử qua SDK google-genai
